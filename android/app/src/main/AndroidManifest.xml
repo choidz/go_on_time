@@ -13,7 +13,19 @@
         android:icon="@mipmap/ic_launcher">
 
         <!-- 2025/07/08 추가   -->
-        <service android:name="com.example.workmanager.BackgroundService" />
+        <service android:name="com.choidz.go_on_time.workmanager.BackgroundService" />
+
+        <!--<service
+        android:name="androidx.work.impl.background.systemjob.SystemJobService"
+        android:enabled="true"
+        android:exported="false"
+        tools:replace="android:enabled,android:exported"/>
+
+        <service
+        android:name="androidx.work.impl.foreground.SystemForegroundService"
+        android:enabled="true"
+        android:exported="false"
+        tools:replace="android:enabled,android:exported"/>-->
 
         <activity
             android:name=".MainActivity"
