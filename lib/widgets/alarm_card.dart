@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
+
 import '../models/alarm.dart';
-import '../screens/alarm_detail_screen.dart';
 
 class AlarmCard extends StatelessWidget {
   final Alarm alarm;
   final VoidCallback onTap;
-  const AlarmCard({super.key, required this.alarm, required this.onTap});
+  final VoidCallback? onAdjust;
+
+  const AlarmCard({
+    super.key,
+    required this.alarm,
+    required this.onTap,
+    this.onAdjust,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -14,8 +21,18 @@ class AlarmCard extends StatelessWidget {
       child: ListTile(
         title: Text(alarm.name),
         subtitle: Text(alarm.time.format(context)),
-        trailing: const Icon(Icons.alarm, color: Colors.red),
         onTap: onTap,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onAdjust != null)
+              IconButton(
+                icon: const Icon(Icons.adjust),
+                onPressed: onAdjust,
+              ),
+            const Icon(Icons.settings),
+          ],
+        ),
       ),
     );
   }
