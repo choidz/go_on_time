@@ -3,64 +3,97 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:geocoding/geocoding.dart' as geo; // 좌표 -> 주소 변환
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart'; // 추가
+import 'package:intl/intl.dart';
 
 class WeatherService {
-  // .env에서 API 키 로드 (런타임 시 초기화)
+  final http.Client _httpClient;
+
+  WeatherService({http.Client? httpClient})
+      : _httpClient = httpClient ?? http.Client();
+
   String get _serviceKey {
-    return dotenv.env['WEATHER_API_KEY'] ?? '';
+    final key = dotenv.env['WEATHER_API_KEY'];
+    if (key == null || key.isEmpty) {
+      debugPrint('경고: WEATHER_API_KEY가 없거나 비어 있음');
+      return '';
+    }
+    return key;
   }
 
   Future<Map<String, dynamic>?> fetchWeather() async {
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      await Geolocator.requestPermission();
-    }
-
-    final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
-
-    final grid = _convertToGrid(position.latitude, position.longitude);
-
-    final now = DateTime.now();
-    final baseDate = DateFormat('yyyyMMdd').format(now);
-    final baseTime = DateFormat('HH00').format(now.subtract(const Duration(minutes: 20)));
-
-    final url = Uri.parse(
-        'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst'
-            '?serviceKey=$_serviceKey&numOfRows=100&dataType=JSON'
-            '&base_date=$baseDate&base_time=$baseTime&nx=${grid.x}&ny=${grid.y}'
-    );
-
-    final response = await http.get(url);
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final items = data['response']['body']['items']['item'];
-
-      double? temp, humid, wind, precip; // 강수량(PPTN) 추가
-
-      for (var item in items) {
-        switch (item['category']) {
-          case 'T1H': // 기온
-            temp = double.tryParse(item['obsrValue'].toString());
-            break;
-          case 'REH': // 습도
-            humid = double.tryParse(item['obsrValue'].toString());
-            break;
-          case 'WSD': // 풍속
-            wind = double.tryParse(item['obsrValue'].toString());
-            break;
-          case 'PPTN': // 강수량 (초단기실황에서 제공 여부 확인 필요)
-            precip = double.tryParse(item['obsrValue'].toString());
-            break;
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        await Geolocator.requestPermission();
+        permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+          debugPrint('위치 권한이 거부됨');
+          return null;
         }
       }
 
-      return {'temp': temp, 'humid': humid, 'wind': wind, 'precip': precip};
-    } else {
-      debugPrint('기상청 API 오류: ${response.body}');
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
+      final placemarks = await geo.placemarkFromCoordinates(position.latitude, position.longitude);
+      final place = placemarks.isNotEmpty ? placemarks.first : null;
+      final region = place?.administrativeArea ?? '알 수 없음'; // 예: 서울, 부산
+      debugPrint('현재 위치: $region (위도: ${position.latitude}, 경도: ${position.longitude})');
+
+      final grid = _convertToGrid(position.latitude, position.longitude);
+      debugPrint('격자 좌표: nx=${grid.x}, ny=${grid.y}');
+      final now = DateTime.now();
+      final baseDate = DateFormat('yyyyMMdd').format(now);
+      final baseTime = DateFormat('HH00').format(now.subtract(const Duration(minutes: 20)));
+
+      final url = Uri.parse(
+          'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst'
+              '?serviceKey=$_serviceKey&numOfRows=100&dataType=JSON'
+              '&base_date=$baseDate&base_time=$baseTime&nx=${grid.x}&ny=${grid.y}'
+      );
+      debugPrint('API 요청 URL: $url');
+
+      final response = await _httpClient.get(url);
+      debugPrint('API 응답 상태: ${response.statusCode}, 내용: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final items = data['response']['body']['items']['item'] as List<dynamic>;
+
+        double? temp, humid, wind, precip;
+
+        for (var item in items) {
+          if (item is! Map<String, dynamic>) continue;
+          switch (item['category']) {
+            case 'T1H':
+              temp = double.tryParse(item['obsrValue'].toString());
+              break;
+            case 'REH':
+              humid = double.tryParse(item['obsrValue'].toString());
+              break;
+            case 'WSD':
+              wind = double.tryParse(item['obsrValue'].toString());
+              break;
+            case 'PPTN':
+              precip = double.tryParse(item['obsrValue'].toString());
+              break;
+          }
+        }
+
+        return {
+          'region': region, // 지역명 추가
+          'temp': temp,
+          'humid': humid,
+          'wind': wind,
+          'precip': precip,
+        };
+      } else {
+        debugPrint('기상청 API 오류: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('fetchWeather 오류: $e');
       return null;
     }
   }
