@@ -22,29 +22,33 @@ class TrafficService {
     return url;
   }
 
-  Future<Map<String, dynamic>?> fetchTrafficData() async {
+  Future<Map<String, dynamic>?> fetchTrafficData(String? district) async {
     try {
-      final url = Uri.parse('$_baseUrl?key=$_apiKey&type=json');
+      // district가 없으면 화성시로 기본 설정
+      final targetDistrict = district ?? 'Hwaseong-si';
+      final url = Uri.parse('$_baseUrl?key=$_apiKey&type=json&district=$targetDistrict');
       debugPrint('교통 API 요청 URL: $url');
 
       final response = await http.get(url);
-      debugPrint('교통 API 응답 상태: ${response.statusCode}, 내용: ${response.body}');
+      debugPrint('교통 API 응답 상태: ${response.statusCode}, 내용: ${response.body.length > 1000 ? response.body.substring(0, 1000) + '...' : response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         if (data['code'] == 'SUCCESS') {
           final trafficAll = data['trafficAll'] as List<dynamic>? ?? [];
           double totalTraffic = 0;
-          int count = trafficAll.length;
+          int count = 0;
           for (var item in trafficAll) {
             if (item is Map<String, dynamic>) {
               final trafficAmount = int.tryParse(item['trafficAmout']?.toString() ?? '0');
               totalTraffic += trafficAmount ?? 0;
+              count++;
             }
           }
           final avgTraffic = count > 0 ? totalTraffic / count : 0;
 
           return {
+            'district': targetDistrict,
             'averageTraffic': avgTraffic,
             'trafficData': trafficAll,
           };

@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/alarm_provider.dart';
 import '../widgets/alarm_card.dart';
 import 'traffic_screen.dart';
-
+import 'traffic_map_screen.dart';
 class AlarmListScreen extends StatefulWidget {
   const AlarmListScreen({super.key});
 
@@ -48,11 +48,89 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
           ],
         ),
       ),
+      // body: SafeArea(
+      //   child: SingleChildScrollView(
+      //     child: Column(
+      //       crossAxisAlignment: CrossAxisAlignment.stretch,
+      //       children: [
+      //         // 날씨/교통 정보 Card (최상단)
+      //         if (Provider.of<AlarmProvider>(context).latestWeather != null ||
+      //             Provider.of<AlarmProvider>(context).latestTraffic != null)
+      //           Padding(
+      //             padding: const EdgeInsets.all(8.0),
+      //             child: Card(
+      //               color: Colors.white,
+      //               elevation: 4,
+      //               shape: RoundedRectangleBorder(
+      //                 borderRadius: BorderRadius.circular(12),
+      //               ),
+      //               child: Column(
+      //                 crossAxisAlignment: CrossAxisAlignment.start,
+      //                 children: [
+      //                   const ListTile(
+      //                     title: Text('현재 상황', style: TextStyle(fontWeight: FontWeight.bold)),
+      //                     tileColor: Colors.transparent,
+      //                   ),
+      //                   if (Provider.of<AlarmProvider>(context).latestWeather != null)
+      //                     ListTile(
+      //                       leading: const Icon(Icons.wb_sunny, color: Colors.yellow),
+      //                       title: const Text('날씨'),
+      //                       subtitle: Text(
+      //                         '지역: ${Provider.of<AlarmProvider>(context).latestWeather!['region'] ?? '알 수 없음'} '
+      //                             '${Provider.of<AlarmProvider>(context).latestWeather!['city'] ?? ''} '
+      //                             '${Provider.of<AlarmProvider>(context).latestWeather!['district'] ?? ''}\n'
+      //                             '온도: ${Provider.of<AlarmProvider>(context).latestWeather!['temp'] ?? 'N/A'}°C\n'
+      //                             '습도: ${Provider.of<AlarmProvider>(context).latestWeather!['humid'] ?? 'N/A'}%\n'
+      //                             '바람: ${Provider.of<AlarmProvider>(context).latestWeather!['wind'] ?? 'N/A'} m/s\n'
+      //                             '강수량: ${Provider.of<AlarmProvider>(context).latestWeather!['precip'] ?? 'N/A'} mm',
+      //                         style: const TextStyle(fontSize: 14),
+      //                       ),
+      //                     ),
+      //                   if (Provider.of<AlarmProvider>(context).latestTraffic != null)
+      //                     ListTile(
+      //                       leading: const Icon(Icons.traffic, color: Colors.green),
+      //                       title: const Text('교통'),
+      //                       subtitle: Text(
+      //                         '지역: ${Provider.of<AlarmProvider>(context).latestTraffic!['district'] ?? '알 수 없음'}\n'
+      //                             '평균 교통량: ${Provider.of<AlarmProvider>(context).latestTraffic!['averageTraffic']?.toStringAsFixed(2) ?? 'N/A'} 대',
+      //                         style: const TextStyle(fontSize: 14),
+      //                       ),
+      //                     ),
+      //                 ],
+      //               ),
+      //             ),
+      //           ),
+      //         // 알람 리스트 (날씨/교통 아래)
+      //         ListView.builder(
+      //           shrinkWrap: true,
+      //           physics: const NeverScrollableScrollPhysics(),
+      //           itemCount: Provider.of<AlarmProvider>(context).alarms.length,
+      //           itemBuilder: (context, index) {
+      //             final alarm = Provider.of<AlarmProvider>(context).alarms[index];
+      //             return AlarmCard(
+      //               alarm: alarm,
+      //               onTap: () {
+      //                 Navigator.pushNamed(context, '/settings', arguments: index);
+      //               },
+      //               onAdjust: () async {
+      //                 await Provider.of<AlarmProvider>(context, listen: false).fetchWeatherAndAdjustAlarm(index);
+      //                 ScaffoldMessenger.of(context).showSnackBar(
+      //                   SnackBar(
+      //                     content: Text(
+      //                       '알람 조정됨: ${alarm.time.format(context)} → ${Provider.of<AlarmProvider>(context).alarms[index].time.format(context)}',
+      //                     ),
+      //                   ),
+      //                 );
+      //               },
+      //             );
+      //           },
+      //         ),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 알람 리스트
               ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -77,9 +155,8 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
                   );
                 },
               ),
-              // 기존 날씨/교통 정보 Card (1번째)
-              if (Provider.of<AlarmProvider>(context).latestWeather != null ||
-                  Provider.of<AlarmProvider>(context).latestTraffic != null)
+              // 날씨 정보 Card
+              if (Provider.of<AlarmProvider>(context).latestWeather != null)
                 Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: Card(
@@ -92,36 +169,67 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const ListTile(
-                          title: Text('현재 상황', style: TextStyle(fontWeight: FontWeight.bold)),
+                          title: Text('날씨', style: TextStyle(fontWeight: FontWeight.bold)),
                           tileColor: Colors.transparent,
                         ),
-                        if (Provider.of<AlarmProvider>(context).latestWeather != null)
-                          ListTile(
-                            leading: const Icon(Icons.wb_sunny, color: Colors.yellow),
-                            title: const Text('날씨'),
-                            subtitle: Text(
-                              '지역: ${Provider.of<AlarmProvider>(context).latestWeather!['region'] ?? '알 수 없음'}\n'
-                                  '온도: ${Provider.of<AlarmProvider>(context).latestWeather!['temp'] ?? 'N/A'}°C\n'
-                                  '습도: ${Provider.of<AlarmProvider>(context).latestWeather!['humid'] ?? 'N/A'}%\n'
-                                  '바람: ${Provider.of<AlarmProvider>(context).latestWeather!['wind'] ?? 'N/A'} m/s\n'
-                                  '강수량: ${Provider.of<AlarmProvider>(context).latestWeather!['precip'] ?? 'N/A'} mm',
-                              style: const TextStyle(fontSize: 14),
-                            ),
+                        ListTile(
+                          leading: const Icon(Icons.wb_sunny, color: Colors.yellow),
+                          subtitle: Text(
+                            '지역: ${Provider.of<AlarmProvider>(context).latestWeather!['region'] ?? '알 수 없음'} '
+                                '${Provider.of<AlarmProvider>(context).latestWeather!['city'] ?? ''} '
+                                '${Provider.of<AlarmProvider>(context).latestWeather!['district'] ?? ''}\n'
+                                '온도: ${Provider.of<AlarmProvider>(context).latestWeather!['temp'] ?? 'N/A'}°C\n'
+                                '습도: ${Provider.of<AlarmProvider>(context).latestWeather!['humid'] ?? 'N/A'}%\n'
+                                '바람: ${Provider.of<AlarmProvider>(context).latestWeather!['wind'] ?? 'N/A'} m/s\n'
+                                '강수량: ${Provider.of<AlarmProvider>(context).latestWeather!['precip'] ?? 'N/A'} mm',
+                            style: const TextStyle(fontSize: 14),
                           ),
-                        if (Provider.of<AlarmProvider>(context).latestTraffic != null)
-                          ListTile(
-                            leading: const Icon(Icons.traffic, color: Colors.green),
-                            title: const Text('교통'),
-                            subtitle: Text(
-                              '평균 교통량: ${Provider.of<AlarmProvider>(context).latestTraffic!['averageTraffic']?.toStringAsFixed(2) ?? 'N/A'} 대',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
-              // 추가 Card 2 (임의 데이터)
+// 교통 정보 Card
+              if (Provider.of<AlarmProvider>(context).latestTraffic != null)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Card(
+                    color: Colors.white,
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const TrafficMapScreen()),
+                        );
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const ListTile(
+                            title: Text('교통', style: TextStyle(fontWeight: FontWeight.bold)),
+                            tileColor: Colors.transparent,
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.traffic, color: Colors.green),
+                            subtitle: Text(
+                              '지역: ${Provider.of<AlarmProvider>(context).latestWeather!['region'] ?? '알 수 없음'} '
+                                  '${Provider.of<AlarmProvider>(context).latestWeather!['city'] ?? ''} '
+                                  '${Provider.of<AlarmProvider>(context).latestWeather!['district'] ?? ''}\n'
+                                  '평균 교통량: ${Provider.of<AlarmProvider>(context).latestTraffic!['averageTraffic']?.toStringAsFixed(2) ?? 'N/A'} 대',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              // 나머지 Card (테스트용 주석 처리)
+              /*
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Card(
@@ -151,7 +259,6 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
                   ),
                 ),
               ),
-              // 추가 Card 3 (임의 데이터)
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Card(
@@ -181,8 +288,7 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
                   ),
                 ),
               ),
-              // 추가 Card 4 (임의 데이터)
-               Padding(
+              Padding(
                 padding: EdgeInsets.all(8.0),
                 child: Card(
                   color: Colors.white,
@@ -211,8 +317,7 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
                   ),
                 ),
               ),
-              // 추가 Card 5 (임의 데이터)
-               Padding(
+              Padding(
                 padding: EdgeInsets.all(8.0),
                 child: Card(
                   color: Colors.white,
@@ -241,6 +346,7 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
                   ),
                 ),
               ),
+              */
             ],
           ),
         ),

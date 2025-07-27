@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:geocoding/geocoding.dart' as geo; // 좌표 -> 주소 변환
+import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -35,11 +35,14 @@ class WeatherService {
         }
       }
 
-      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high); // 정밀도 높임
       final placemarks = await geo.placemarkFromCoordinates(position.latitude, position.longitude);
       final place = placemarks.isNotEmpty ? placemarks.first : null;
-      final region = place?.administrativeArea ?? '알 수 없음'; // 예: 서울, 부산
-      debugPrint('현재 위치: $region (위도: ${position.latitude}, 경도: ${position.longitude})');
+      final region = place?.administrativeArea ?? '알 수 없음'; // 예: 경기도
+      final city = place?.locality ?? ''; // 예: 화성시
+      final district = place?.subLocality ?? place?.thoroughfare ?? place?.subAdministrativeArea ?? ''; // 동 단위 시도
+      debugPrint('Placemark 데이터: $place'); // 디버깅용
+      debugPrint('현재 위치: $region $city $district (위도: ${position.latitude}, 경도: ${position.longitude})');
 
       final grid = _convertToGrid(position.latitude, position.longitude);
       debugPrint('격자 좌표: nx=${grid.x}, ny=${grid.y}');
@@ -82,7 +85,9 @@ class WeatherService {
         }
 
         return {
-          'region': region, // 지역명 추가
+          'region': region,
+          'city': city,
+          'district': district.isNotEmpty ? district : '동 정보 없음', // 동 없으면 명시
           'temp': temp,
           'humid': humid,
           'wind': wind,

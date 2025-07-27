@@ -25,6 +25,10 @@ dependencies:
   intl: ^0.20.2
   workmanager: ^0.7.0
   geocoding: ^4.0.0
+  firebase_auth: ^5.7.0
+  flutter_map: ^8.1.1
+  latlong2: ^0.9.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
