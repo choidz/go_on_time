@@ -17,7 +17,7 @@ class AlarmCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: Colors.white10,
+      color: Colors.white,
       child: ListTile(
         title: Text(alarm.name),
         subtitle: Text(alarm.time.format(context)),

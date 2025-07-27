@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/alarm_provider.dart';
 import '../widgets/alarm_card.dart';
+import 'traffic_screen.dart';
 
 class AlarmListScreen extends StatefulWidget {
   const AlarmListScreen({super.key});
@@ -15,82 +16,237 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
   void initState() {
     super.initState();
     final alarmProvider = Provider.of<AlarmProvider>(context, listen: false);
-    alarmProvider.fetchWeather(); // 날씨 데이터 로드
-    alarmProvider.fetchTraffic(); // 교통 데이터 로드
+    alarmProvider.fetchWeather();
+    alarmProvider.fetchTraffic();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('goOnTime')),
-      body: Consumer<AlarmProvider>(
-        builder: (context, alarmProvider, child) {
-          return Column(
+      appBar: AppBar(
+        title: null,
+        backgroundColor: Colors.lightBlueAccent,
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            const DrawerHeader(
+              decoration: BoxDecoration(color: Colors.blue),
+              child: Text('메뉴'),
+            ),
+            ListTile(
+              title: const Text('교통 정보'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TrafficScreen()),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: ListView.builder(
-                  itemCount: alarmProvider.alarms.length,
-                  itemBuilder: (context, index) {
-                    final alarm = alarmProvider.alarms[index];
-                    return AlarmCard(
-                      alarm: alarm,
-                      onTap: () {
-                        Navigator.pushNamed(context, '/설정', arguments: index);
-                      },
-                      onAdjust: () async {
-                        await alarmProvider.fetchWeatherAndAdjustAlarm(index);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              '알람 조정됨: ${alarm.time.format(context)} → ${alarmProvider.alarms[index].time.format(context)}',
-                            ),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: Provider.of<AlarmProvider>(context).alarms.length,
+                itemBuilder: (context, index) {
+                  final alarm = Provider.of<AlarmProvider>(context).alarms[index];
+                  return AlarmCard(
+                    alarm: alarm,
+                    onTap: () {
+                      Navigator.pushNamed(context, '/settings', arguments: index);
+                    },
+                    onAdjust: () async {
+                      await Provider.of<AlarmProvider>(context, listen: false).fetchWeatherAndAdjustAlarm(index);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '알람 조정됨: ${alarm.time.format(context)} → ${Provider.of<AlarmProvider>(context).alarms[index].time.format(context)}',
                           ),
-                        );
-                      },
-                    );
-                  },
-                ),
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
-              if (alarmProvider.latestWeather != null || alarmProvider.latestTraffic != null)
+              // 기존 날씨/교통 정보 Card (1번째)
+              if (Provider.of<AlarmProvider>(context).latestWeather != null ||
+                  Provider.of<AlarmProvider>(context).latestTraffic != null)
                 Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: Card(
-                    color: Colors.white10,
+                    color: Colors.white,
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const ListTile(
-                          title: Text('현재 상황'),
+                          title: Text('현재 상황', style: TextStyle(fontWeight: FontWeight.bold)),
                           tileColor: Colors.transparent,
                         ),
-                        if (alarmProvider.latestWeather != null)
+                        if (Provider.of<AlarmProvider>(context).latestWeather != null)
                           ListTile(
+                            leading: const Icon(Icons.wb_sunny, color: Colors.yellow),
                             title: const Text('날씨'),
                             subtitle: Text(
-                              '지역: ${alarmProvider.latestWeather!['region'] ?? '알 수 없음'}, '
-                                  '온도: ${alarmProvider.latestWeather!['temp'] ?? 'N/A'}°C, '
-                                  '습도: ${alarmProvider.latestWeather!['humid'] ?? 'N/A'}%, '
-                                  '바람: ${alarmProvider.latestWeather!['wind'] ?? 'N/A'} m/s, '
-                                  '강수량: ${alarmProvider.latestWeather!['precip'] ?? 'N/A'} mm',
+                              '지역: ${Provider.of<AlarmProvider>(context).latestWeather!['region'] ?? '알 수 없음'}\n'
+                                  '온도: ${Provider.of<AlarmProvider>(context).latestWeather!['temp'] ?? 'N/A'}°C\n'
+                                  '습도: ${Provider.of<AlarmProvider>(context).latestWeather!['humid'] ?? 'N/A'}%\n'
+                                  '바람: ${Provider.of<AlarmProvider>(context).latestWeather!['wind'] ?? 'N/A'} m/s\n'
+                                  '강수량: ${Provider.of<AlarmProvider>(context).latestWeather!['precip'] ?? 'N/A'} mm',
+                              style: const TextStyle(fontSize: 14),
                             ),
                           ),
-                        if (alarmProvider.latestTraffic != null)
+                        if (Provider.of<AlarmProvider>(context).latestTraffic != null)
                           ListTile(
+                            leading: const Icon(Icons.traffic, color: Colors.green),
                             title: const Text('교통'),
                             subtitle: Text(
-                              '평균 교통량: ${alarmProvider.latestTraffic!['averageTraffic']?.toStringAsFixed(2) ?? 'N/A'} 대',
+                              '평균 교통량: ${Provider.of<AlarmProvider>(context).latestTraffic!['averageTraffic']?.toStringAsFixed(2) ?? 'N/A'} 대',
+                              style: const TextStyle(fontSize: 14),
                             ),
                           ),
                       ],
                     ),
                   ),
                 ),
+              // 추가 Card 2 (임의 데이터)
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Card(
+                  color: Colors.white,
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        title: Text('추가 정보 1', style: TextStyle(fontWeight: FontWeight.bold)),
+                        tileColor: Colors.transparent,
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.info, color: Colors.purple),
+                        title: Text('상태'),
+                        subtitle: Text(
+                          '상태: 정상\n'
+                              '값: 100\n'
+                              '시간: 12:00',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // 추가 Card 3 (임의 데이터)
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Card(
+                  color: Colors.white,
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        title: Text('추가 정보 2', style: TextStyle(fontWeight: FontWeight.bold)),
+                        tileColor: Colors.transparent,
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.settings, color: Colors.orange),
+                        title: Text('설정'),
+                        subtitle: Text(
+                          '모드: 자동\n'
+                              '레벨: 중간\n'
+                              '업데이트: 2025-07-27',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // 추가 Card 4 (임의 데이터)
+               Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Card(
+                  color: Colors.white,
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        title: Text('추가 정보 3', style: TextStyle(fontWeight: FontWeight.bold)),
+                        tileColor: Colors.transparent,
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.battery_full, color: Colors.blue),
+                        title: Text('배터리'),
+                        subtitle: Text(
+                          '수명: 85%\n'
+                              '상태: 충전 중\n'
+                              '시간: 2시간',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // 추가 Card 5 (임의 데이터)
+               Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Card(
+                  color: Colors.white,
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        title: Text('추가 정보 4', style: TextStyle(fontWeight: FontWeight.bold)),
+                        tileColor: Colors.transparent,
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.wifi, color: Colors.teal),
+                        title: Text('네트워크'),
+                        subtitle: Text(
+                          '신호: 강함\n'
+                              '속도: 50Mbps\n'
+                              '연결: Wi-Fi',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
-          );
-        },
+          ),
+        ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, '/설정'),
+        onPressed: () => Navigator.pushNamed(context, '/settings'),
         child: const Icon(Icons.add),
       ),
     );
