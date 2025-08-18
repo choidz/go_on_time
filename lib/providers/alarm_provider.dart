@@ -21,7 +21,6 @@ class AlarmProvider extends ChangeNotifier {
   Map<String, dynamic>? get latestWeather => _latestWeather;
   Map<String, dynamic>? get latestTraffic => _latestTraffic;
 
-  // 자주 가는 길 (미래 기능용 플래그)
   String? _frequentRouteDistrict;
 
   AlarmProvider() {
@@ -67,6 +66,7 @@ class AlarmProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // saveData 메서드를 수정하여 규칙적인 문서 ID를 사용하도록 합니다.
   Future<void> saveData() async {
     if (_deviceUid == null) return;
     final batch = _firestore.batch();
@@ -74,12 +74,23 @@ class AlarmProvider extends ChangeNotifier {
         .collection('users')
         .doc(_deviceUid)
         .collection('alarms');
-    await alarmsRef.get().then((snapshot) {
-      for (var doc in snapshot.docs) batch.delete(doc.reference);
-    });
-    for (var alarm in _alarms) {
-      batch.set(alarmsRef.doc(), alarm.toJson());
+
+    // 기존 문서를 모두 삭제합니다.
+    // (알람 정보가 변경되면 ID도 바뀌므로, 이 방식이 가장 간단하고 확실합니다.)
+    final snapshot = await alarmsRef.get();
+    for (var doc in snapshot.docs) {
+      batch.delete(doc.reference);
     }
+
+    // 각 알람에 대해 규칙적인 ID를 생성하여 문서를 set 합니다.
+    for (var alarm in _alarms) {
+      // ★★★ 여기가 핵심 변경 부분입니다 ★★★
+      // Firestore의 자동 ID 대신 alarm.documentId를 사용합니다.
+      final docRef = alarmsRef.doc(alarm.documentId);
+      batch.set(docRef, alarm.toJson());
+    }
+
+    // 날씨, 교통 데이터 저장은 기존과 동일합니다.
     batch.set(
       _firestore
           .collection('users')
@@ -97,8 +108,10 @@ class AlarmProvider extends ChangeNotifier {
       _latestTraffic ?? {},
     );
     await batch.commit();
+    debugPrint('Data saved with custom alarm document IDs.');
   }
 
+  // ... 이하 나머지 코드는 모두 동일 ...
   Future<void> fetchWeatherAndAdjustAlarm(int index) async {
     _latestWeather = await _weatherService.fetchWeather();
     _latestTraffic = await _trafficService.fetchTrafficData(_frequentRouteDistrict ?? _latestWeather?['district']);
@@ -141,12 +154,6 @@ class AlarmProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Future<void> fetchTraffic() async {
-  //   _latestTraffic = await _trafficService.fetchTrafficData(_frequentRouteDistrict ?? _latestWeather?['district']);
-  //   await saveData();
-  //   notifyListeners();
-  // }
-  // lib/providers/alarm_provider.dart (부분 수정)
   Future<void> fetchTraffic() async {
     final district = _latestWeather?['district'] ?? 'Hwaseong-si'; // 화성시 기본값
     _latestTraffic = await _trafficService.fetchTrafficData(district);
