@@ -12,6 +12,9 @@ class AlarmProvider extends ChangeNotifier {
   Map<String, dynamic>? _latestWeather;
   Map<String, dynamic>? _latestTraffic;
 
+  // [신규] 마지막 조정 내역을 임시로 저장할 변수
+  Map<String, dynamic>? lastAdjustmentDetails;
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   String? _deviceUid;
@@ -66,7 +69,6 @@ class AlarmProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // saveData 메서드를 수정하여 규칙적인 문서 ID를 사용하도록 합니다.
   Future<void> saveData() async {
     if (_deviceUid == null) return;
     final batch = _firestore.batch();
@@ -75,22 +77,14 @@ class AlarmProvider extends ChangeNotifier {
         .doc(_deviceUid)
         .collection('alarms');
 
-    // 기존 문서를 모두 삭제합니다.
-    // (알람 정보가 변경되면 ID도 바뀌므로, 이 방식이 가장 간단하고 확실합니다.)
     final snapshot = await alarmsRef.get();
     for (var doc in snapshot.docs) {
       batch.delete(doc.reference);
     }
-
-    // 각 알람에 대해 규칙적인 ID를 생성하여 문서를 set 합니다.
     for (var alarm in _alarms) {
-      // ★★★ 여기가 핵심 변경 부분입니다 ★★★
-      // Firestore의 자동 ID 대신 alarm.documentId를 사용합니다.
       final docRef = alarmsRef.doc(alarm.documentId);
       batch.set(docRef, alarm.toJson());
     }
-
-    // 날씨, 교통 데이터 저장은 기존과 동일합니다.
     batch.set(
       _firestore
           .collection('users')
@@ -111,52 +105,89 @@ class AlarmProvider extends ChangeNotifier {
     debugPrint('Data saved with custom alarm document IDs.');
   }
 
-  // ... 이하 나머지 코드는 모두 동일 ...
   Future<void> fetchWeatherAndAdjustAlarm(int index) async {
-    _latestWeather = await _weatherService.fetchWeather();
-    _latestTraffic = await _trafficService.fetchTrafficData(_frequentRouteDistrict ?? _latestWeather?['district']);
-    if (_latestWeather != null && _latestTraffic != null && index >= 0 && index < _alarms.length) {
-      final alarm = _alarms[index];
-      int extraTime = 0;
+    if (index < 0 || index >= _alarms.length) return;
 
-      if (_latestWeather!['precip'] != null && _latestWeather!['precip']! > 5) {
-        extraTime += 15;
-      }
-      if (_latestWeather!['temp'] != null && _latestWeather!['temp']! < 0) {
-        extraTime += 10;
-      }
+    final alarm = _alarms[index];
+    final originalTime = alarm.time; // [수정] 덮어쓰기 전에 원래 시간 저장
 
-      final avgTraffic = _latestTraffic!['averageTraffic'] as double? ?? 0;
-      if (avgTraffic > 1000) {
-        extraTime += 15;
-      }
-
-      if (extraTime > 0) {
-        final newTime = alarm.time.replacing(
-          hour: alarm.time.hour,
-          minute: alarm.time.minute - extraTime,
-        );
-        _alarms[index] = Alarm(
-          name: alarm.name,
-          time: newTime,
-          days: alarm.days,
-          ringtone: alarm.ringtone,
-        );
-      }
-      await saveData();
-      notifyListeners();
+    if (alarm.startPoint == null || alarm.endPoint == null || alarm.startPoint!.isEmpty || alarm.endPoint!.isEmpty) {
+      debugPrint("경로가 설정되지 않아 '${alarm.name}' 알람을 조정할 수 없습니다.");
+      return;
     }
+
+    final travelTimeInSeconds = await _trafficService.getTravelTime(alarm.startPoint!, alarm.endPoint!);
+
+    if (travelTimeInSeconds == null) {
+      debugPrint("TMAP API 호출에 실패하여 알람을 조정할 수 없습니다.");
+      return;
+    }
+
+    _latestWeather = await _weatherService.fetchWeather();
+
+    int extraTimeInSeconds = 0;
+
+    if (_latestWeather != null) {
+      if ((_latestWeather!['precip'] as num? ?? 0) > 5) {
+        extraTimeInSeconds += 15 * 60; // 15분
+      }
+      if ((_latestWeather!['temp'] as num? ?? 0) < 0) {
+        extraTimeInSeconds += 10 * 60; // 10분
+      }
+    }
+
+    final totalTravelTime = Duration(seconds: travelTimeInSeconds + extraTimeInSeconds);
+
+    final now = DateTime.now();
+    final desiredArrivalDateTime = DateTime(now.year, now.month, now.day, alarm.time.hour, alarm.time.minute);
+
+    final newDepartureDateTime = desiredArrivalDateTime.subtract(totalTravelTime);
+    final newTime = TimeOfDay.fromDateTime(newDepartureDateTime);
+
+    // [신규] 화면 표시를 위해 조정 내역을 변수에 저장
+    String reason = "실시간 교통정보";
+    List<String> reasons = [];
+    if (_latestWeather != null) {
+      if ((_latestWeather!['precip'] as num? ?? 0) > 5) reasons.add("강수 예보");
+      if ((_latestWeather!['temp'] as num? ?? 0) < 0) reasons.add("저온");
+    }
+    if (reasons.isNotEmpty) {
+      reason += " (${reasons.join(', ')})";
+    }
+
+    lastAdjustmentDetails = {
+      'startPoint': alarm.startPoint,
+      'endPoint': alarm.endPoint,
+      'originalTime': originalTime,
+      'adjustedTime': newTime,
+      'reason': reason,
+    };
+
+    _alarms[index] = Alarm(
+      name: alarm.name,
+      time: newTime,
+      days: alarm.days,
+      ringtone: alarm.ringtone,
+      startPoint: alarm.startPoint,
+      endPoint: alarm.endPoint,
+      district: alarm.district,
+    );
+
+    await saveData();
+    notifyListeners();
+
+    debugPrint("'${alarm.name}' 알람이 TMAP 데이터 기반으로 조정되었습니다: ${newTime.toString()}");
   }
 
-  Future<void> fetchWeather() async {
-    _latestWeather = await _weatherService.fetchWeather();
+  Future<void> fetchTraffic() async {
+    final district = _latestWeather?['district'] ?? 'Hwaseong-si';
+    _latestTraffic = await _trafficService.fetchTrafficData(district);
     await saveData();
     notifyListeners();
   }
 
-  Future<void> fetchTraffic() async {
-    final district = _latestWeather?['district'] ?? 'Hwaseong-si'; // 화성시 기본값
-    _latestTraffic = await _trafficService.fetchTrafficData(district);
+  Future<void> fetchWeather() async {
+    _latestWeather = await _weatherService.fetchWeather();
     await saveData();
     notifyListeners();
   }
