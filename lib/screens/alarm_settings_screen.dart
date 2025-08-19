@@ -23,8 +23,9 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    final provider = Provider.of<AlarmProvider>(context, listen: false);
+    // 수정 모드일 경우에만 Provider에서 데이터를 가져옵니다.
     if (widget.index != null) {
+      final provider = Provider.of<AlarmProvider>(context, listen: false);
       final alarm = provider.alarms[widget.index!];
       _nameController.text = alarm.name;
       _startPointController.text = alarm.startPoint ?? '';
@@ -65,9 +66,39 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
     Navigator.pop(context);
   }
 
+  // [신규] 삭제 확인 다이얼로그를 보여주는 함수
+  Future<void> _showDeleteConfirmationDialog() async {
+    final bool? confirmed = await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("삭제 확인"),
+          content: const Text("이 알람을 정말로 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text("취소"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text("삭제", style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+
+    // 사용자가 '삭제'를 눌렀을 경우
+    if (confirmed == true && widget.index != null) {
+      final provider = Provider.of<AlarmProvider>(context, listen: false);
+      provider.deleteAlarm(widget.index!);
+      Navigator.of(context).pop(); // 삭제 후 목록 화면으로 돌아가기
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
-    // AlarmListScreen의 색상 테마를 그대로 가져옵니다.
     const Color textColor = Color(0xFF0F2039);
     const Color buttonColor = Color(0xFF22BD4E);
     const Color hintColor = Colors.grey;
@@ -106,6 +137,13 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
         appBar: AppBar(
           title: Text(widget.index == null ? '새 알람' : '알람 수정'),
           actions: [
+            // [신규] 수정 모드일 때만 삭제 버튼을 보여줍니다.
+            if (widget.index != null)
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                onPressed: _showDeleteConfirmationDialog,
+                tooltip: '삭제',
+              ),
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: _saveAndAdjustAlarm,
@@ -153,7 +191,6 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
                   if (newTime != null) setState(() => _time = newTime);
                 },
               ),
-              // ... (요일 선택 UI 등을 여기에 추가할 수 있습니다) ...
             ],
           ),
         ),
