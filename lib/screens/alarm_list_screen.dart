@@ -5,7 +5,6 @@ import '../providers/alarm_provider.dart';
 import '../widgets/alarm_card.dart';
 import 'traffic_screen.dart';
 import 'traffic_map_screen.dart';
-import 'alarm_settings_screen.dart';
 
 class AlarmListScreen extends StatefulWidget {
   const AlarmListScreen({super.key});
@@ -28,7 +27,10 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
   }
 
   Future<void> _fetchInitialData() async {
+    // listen: false로 설정하여 build 메서드 밖에서 안전하게 호출합니다.
     final alarmProvider = Provider.of<AlarmProvider>(context, listen: false);
+    // 데이터 로딩이 완료될 때까지 기다립니다.
+    await alarmProvider.initializeFirebase();
     await Future.wait([
       alarmProvider.fetchWeather(),
       alarmProvider.fetchTraffic(),
@@ -80,7 +82,7 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator(color: buttonColor));
               } else if (snapshot.hasError) {
-                return const Center(child: Text('데이터를 불러오는 데 실패했습니다.'));
+                return Center(child: Text('데이터를 불러오는 데 실패했습니다: ${snapshot.error}'));
               } else {
                 return RefreshIndicator(
                   onRefresh: _fetchInitialData,
@@ -111,7 +113,7 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
           const SizedBox(height: 16),
           _buildInfoCards(),
           const SizedBox(height: 24),
-          _buildAdjustmentDetails(),
+          _buildAdjustmentDetails(), // ✨ 여기가 수정된 위젯입니다.
           const SizedBox(height: 16),
           _buildAlarmList(),
         ],
@@ -119,144 +121,98 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
     );
   }
 
-  Widget _buildNextAlarmBriefing() {
-    final provider = Provider.of<AlarmProvider>(context);
-    final nextAlarm = provider.alarms.isNotEmpty ? provider.alarms.first : null;
-    final trafficStatus = _getTrafficStatus(provider.latestTraffic?['averageTraffic'] as double? ?? 0.0).status;
+  // --- ✨ 1. '최근 조정 내역' 위젯 수정 ---
+  // 임시 데이터를 사용하던 로직을 삭제하고, Provider의 실제 데이터를 사용하도록 변경합니다.
+  Widget _buildAdjustmentDetails() {
+    return Consumer<AlarmProvider>(
+      builder: (context, provider, child) {
+        // 조정된 적이 있는 알람들만 필터링합니다.
+        final adjustedAlarms = provider.alarms
+            .where((alarm) => alarm.lastAdjustedTime != null)
+            .toList();
 
-    String greeting;
-    String briefing;
+        // 조정된 알람이 없으면 위젯을 아예 표시하지 않습니다.
+        if (adjustedAlarms.isEmpty) {
+          return const SizedBox.shrink();
+        }
 
-    if (nextAlarm != null) {
-      greeting = "좋은 아침입니다! ☀️";
-      briefing = "다음 알람은 '${nextAlarm.name}'이며, ${nextAlarm.time.format(context)}에 울립니다.";
-    } else {
-      greeting = "좋은 하루 보내세요! 👍";
-      briefing = "오늘 예정된 알람이 없습니다.";
-    }
+        // 가장 최근에 조정된 알람을 찾기 위해 시간순으로 정렬합니다.
+        adjustedAlarms.sort((a, b) => b.lastAdjustedTime!.compareTo(a.lastAdjustedTime!));
+        final mostRecent = adjustedAlarms.first;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(greeting, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(briefing, style: const TextStyle(color: Colors.white70, fontSize: 14)),
-          if (nextAlarm != null)
-            Text("현재 교통상황은 '$trafficStatus'입니다.", style: const TextStyle(color: Colors.white70, fontSize: 14)),
-        ],
-      ),
+        // UI에 표시할 텍스트를 준비합니다. null일 경우를 대비해 기본값을 설정합니다.
+        final route = '${mostRecent.startPoint ?? "출발지 미설정"} → ${mostRecent.endPoint ?? "도착지 미설정"}';
+        final originalTime = mostRecent.originalTime?.format(context) ?? '이전 시간';
+        final adjustedTime = mostRecent.time.format(context);
+        final adjustmentText = '$originalTime → $adjustedTime';
+        final reason = mostRecent.adjustmentReason ?? '원인 정보 없음';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('최근 조정된 알람', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 18)),
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    _buildDetailRow(Icons.route_outlined, '경로', route),
+                    const Divider(height: 24),
+                    _buildDetailRow(Icons.history_toggle_off, '조정 시간', adjustmentText),
+                    const Divider(height: 24),
+                    _buildDetailRow(Icons.info_outline, '주요 원인', reason),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  // Widget _buildAdjustmentDetails() {
-  //   final provider = Provider.of<AlarmProvider>(context);
-  //   // TODO: 실제 마지막으로 조정된 알람을 찾는 로직 필요
-  //   final adjustedAlarm = provider.alarms.isNotEmpty ? provider.alarms.first : null;
-  //
-  //   // ===============================================================
-  //   // ▼▼▼▼▼ [실제 로직] 나중에 이 주석을 해제하면 원래대로 동작합니다 ▼▼▼▼▼
-  //   // ===============================================================
-  //   /*
-  //   if (adjustedAlarm == null || adjustedAlarm.startPoint == null || adjustedAlarm.startPoint!.isEmpty) {
-  //     // 보여줄 정보가 없으면 위젯을 숨깁니다.
-  //     return const SizedBox.shrink();
-  //   }
-  //   */
-  //   // ===============================================================
-  //
-  //   // ===============================================================
-  //   // ▼▼▼▼▼ [임시 로직] UI 확인을 위해 항상 보이도록 처리합니다 ▼▼▼▼▼
-  //   // ===============================================================
-  //   // 알람이 없을 경우를 대비해 임시 데이터를 만들어줍니다.
-  //   final displayAlarm = adjustedAlarm ?? Alarm(name: '출근', time: TimeOfDay.now(), startPoint: '동탄역', endPoint: '강남역');
-  //   // ===============================================================
-  //
-  //
-  //   return Column(
-  //     crossAxisAlignment: CrossAxisAlignment.start,
-  //     children: [
-  //       Text('최근 조정된 알람', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 18)),
-  //       const SizedBox(height: 8),
-  //       Card(
-  //         child: Padding(
-  //           padding: const EdgeInsets.all(16.0),
-  //           child: Column(
-  //             children: [
-  //               _buildDetailRow(Icons.route_outlined, '경로', '${displayAlarm.startPoint} → ${displayAlarm.endPoint}'),
-  //               const Divider(height: 24),
-  //               _buildDetailRow(Icons.history_toggle_off, '조정 시간', '15분 (07:30 → 07:15)'), // 예시 데이터
-  //               const Divider(height: 24),
-  //               _buildDetailRow(Icons.info_outline, '주요 원인', '강설 예보, 출근길 정체'), // 예시 데이터
-  //             ],
-  //           ),
-  //         ),
-  //       ),
-  //     ],
-  //   );
-  // }
-  // [수정] TMAP API 결과를 동적으로 표시하고, 임시로 항상 보이도록 수정한 위젯
-  Widget _buildAdjustmentDetails() {
-    final provider = Provider.of<AlarmProvider>(context);
-    final details = provider.lastAdjustmentDetails;
 
-    // ===============================================================
-    // ▼▼▼▼▼ [실제 로직] 나중에 이 주석을 해제하면 원래대로 동작합니다 ▼▼▼▼▼
-    // ===============================================================
-    /*
-    if (details == null) {
-      // 조정 내역이 없으면 위젯을 숨깁니다.
-      return const SizedBox.shrink();
-    }
-    */
-    // ===============================================================
+  // --- 이하 위젯들은 큰 변경 사항이 없습니다 ---
 
+  Widget _buildNextAlarmBriefing() {
+    // Consumer로 감싸서 Provider 데이터 변경 시 자동으로 UI가 업데이트되도록 합니다.
+    return Consumer<AlarmProvider>(
+      builder: (context, provider, child) {
+        // TODO: '다음 알람'을 찾는 정확한 로직 구현 필요 (현재는 첫 번째 알람 표시)
+        final nextAlarm = provider.alarms.isNotEmpty ? provider.alarms.first : null;
+        final trafficStatus = _getTrafficStatus(provider.latestTraffic?['averageTraffic'] as double? ?? 0.0).status;
 
-    // ===============================================================
-    // ▼▼▼▼▼ [임시 로직] UI 확인을 위해 항상 보이도록 처리합니다 ▼▼▼▼▼
-    // ===============================================================
-    // 조정 내역이 없을 경우를 대비해 임시 데이터를 만들어줍니다.
-    final displayDetails = details ?? {
-      'startPoint': '동탄역',
-      'endPoint': '강남역',
-      'originalTime': const TimeOfDay(hour: 7, minute: 30),
-      'adjustedTime': const TimeOfDay(hour: 7, minute: 15),
-      'reason': '강설 예보, 출근길 정체',
-    };
-    // ===============================================================
+        String greeting;
+        String briefing;
 
+        if (nextAlarm != null) {
+          greeting = "좋은 아침입니다! ☀️";
+          briefing = "다음 알람은 '${nextAlarm.name}'이며, ${nextAlarm.time.format(context)}에 울립니다.";
+        } else {
+          greeting = "좋은 하루 보내세요! 👍";
+          briefing = "오늘 예정된 알람이 없습니다.";
+        }
 
-    // TimeOfDay를 포맷팅합니다.
-    final originalTime = (displayDetails['originalTime'] as TimeOfDay).format(context);
-    final adjustedTime = (displayDetails['adjustedTime'] as TimeOfDay).format(context);
-    final adjustmentText = '$originalTime → $adjustedTime';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('최근 조정된 알람', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 18)),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                _buildDetailRow(Icons.route_outlined, '경로', '${displayDetails['startPoint']} → ${displayDetails['endPoint']}'),
-                const Divider(height: 24),
-                _buildDetailRow(Icons.history_toggle_off, '조정 시간', adjustmentText),
-                const Divider(height: 24),
-                _buildDetailRow(Icons.info_outline, '주요 원인', displayDetails['reason'].toString()),
-              ],
-            ),
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(12),
           ),
-        ),
-      ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(greeting, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(briefing, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+              if (nextAlarm != null)
+                Text("현재 교통상황은 '$trafficStatus'입니다.", style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -267,7 +223,7 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
         const SizedBox(width: 12),
         Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         const Spacer(),
-        Text(value),
+        Flexible(child: Text(value, textAlign: TextAlign.end,)),
       ],
     );
   }
@@ -378,18 +334,15 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
               itemCount: provider.alarms.length,
               itemBuilder: (context, index) {
                 final alarm = provider.alarms[index];
-                // [신규] Dismissible 위젯으로 AlarmCard를 감싸 스와이프 기능을 추가합니다.
                 return Dismissible(
-                  key: Key(alarm.documentId), // 각 항목을 식별할 고유 키
-                  direction: DismissDirection.endToStart, // 오른쪽에서 왼쪽으로만 스와이프
+                  key: Key(alarm.documentId),
+                  direction: DismissDirection.endToStart,
                   onDismissed: (direction) {
-                    // 스와이프가 완료되면 알람을 삭제합니다.
                     provider.deleteAlarm(index);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text("'${alarm.name}' 알람이 삭제되었습니다.")),
                     );
                   },
-                  // [신규] 삭제 전에 사용자에게 확인을 받습니다.
                   confirmDismiss: (direction) async {
                     return await showDialog(
                       context: context,
@@ -411,7 +364,6 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
                       },
                     );
                   },
-                  // [신규] 스와이프할 때 배경에 보이는 UI
                   background: Container(
                     decoration: BoxDecoration(
                       color: Colors.red,
@@ -424,8 +376,7 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
                   ),
                   child: AlarmCard(
                     alarm: alarm,
-                    onTap: () => Navigator.pushNamed(context, '/settings', arguments: index)
-                        .then((_) => setState(() {})),
+                    onTap: () => Navigator.pushNamed(context, '/settings', arguments: index),
                     onAdjust: () async {
                       final originalTime = alarm.time.format(context);
                       await provider.fetchWeatherAndAdjustAlarm(index);

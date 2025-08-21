@@ -12,8 +12,9 @@ class AlarmProvider extends ChangeNotifier {
   Map<String, dynamic>? _latestWeather;
   Map<String, dynamic>? _latestTraffic;
 
-  // [신규] 마지막 조정 내역을 임시로 저장할 변수
-  Map<String, dynamic>? lastAdjustmentDetails;
+  // --- 🗑️ 1. 임시 변수 삭제 ---
+  // 조정 내역을 Alarm 객체에 직접 저장하므로 이 변수는 더 이상 필요 없습니다.
+  // Map<String, dynamic>? lastAdjustmentDetails;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -30,6 +31,7 @@ class AlarmProvider extends ChangeNotifier {
     initializeFirebase().then((_) => _loadData());
   }
 
+  // initializeFirebase, _loadData, saveData 메서드는 변경 사항 없습니다.
   Future<void> initializeFirebase() async {
     try {
       final userCredential = await _auth.signInAnonymously();
@@ -109,7 +111,8 @@ class AlarmProvider extends ChangeNotifier {
     if (index < 0 || index >= _alarms.length) return;
 
     final alarm = _alarms[index];
-    final originalTime = alarm.time; // [수정] 덮어쓰기 전에 원래 시간 저장
+    // --- ✨ 2. 조정 전 원래 시간 저장 ---
+    final originalTime = alarm.time;
 
     if (alarm.startPoint == null || alarm.endPoint == null || alarm.startPoint!.isEmpty || alarm.endPoint!.isEmpty) {
       debugPrint("경로가 설정되지 않아 '${alarm.name}' 알람을 조정할 수 없습니다.");
@@ -126,25 +129,18 @@ class AlarmProvider extends ChangeNotifier {
     _latestWeather = await _weatherService.fetchWeather();
 
     int extraTimeInSeconds = 0;
-
     if (_latestWeather != null) {
-      if ((_latestWeather!['precip'] as num? ?? 0) > 5) {
-        extraTimeInSeconds += 15 * 60; // 15분
-      }
-      if ((_latestWeather!['temp'] as num? ?? 0) < 0) {
-        extraTimeInSeconds += 10 * 60; // 10분
-      }
+      if ((_latestWeather!['precip'] as num? ?? 0) > 5) extraTimeInSeconds += 15 * 60;
+      if ((_latestWeather!['temp'] as num? ?? 0) < 0) extraTimeInSeconds += 10 * 60;
     }
 
     final totalTravelTime = Duration(seconds: travelTimeInSeconds + extraTimeInSeconds);
-
     final now = DateTime.now();
     final desiredArrivalDateTime = DateTime(now.year, now.month, now.day, alarm.time.hour, alarm.time.minute);
-
     final newDepartureDateTime = desiredArrivalDateTime.subtract(totalTravelTime);
     final newTime = TimeOfDay.fromDateTime(newDepartureDateTime);
 
-    // [신규] 화면 표시를 위해 조정 내역을 변수에 저장
+    // 조정 사유 텍스트 생성
     String reason = "실시간 교통정보";
     List<String> reasons = [];
     if (_latestWeather != null) {
@@ -155,22 +151,24 @@ class AlarmProvider extends ChangeNotifier {
       reason += " (${reasons.join(', ')})";
     }
 
-    lastAdjustmentDetails = {
-      'startPoint': alarm.startPoint,
-      'endPoint': alarm.endPoint,
-      'originalTime': originalTime,
-      'adjustedTime': newTime,
-      'reason': reason,
-    };
+    // --- 🗑️ 임시 변수 할당 로직 삭제 ---
+    // lastAdjustmentDetails = { ... };
 
+    // --- ✨ 3. 새로운 필드까지 포함된 Alarm 객체로 교체 ---
+    // 기존 alarm 객체의 모든 속성을 그대로 가져오면서,
+    // 변경된 time과 새로운 조정 내역 필드들을 채워줍니다.
     _alarms[index] = Alarm(
       name: alarm.name,
-      time: newTime,
+      time: newTime, // 조정된 새 시간
       days: alarm.days,
       ringtone: alarm.ringtone,
       startPoint: alarm.startPoint,
       endPoint: alarm.endPoint,
       district: alarm.district,
+      // --- 🔽 여기에 영구 저장할 조정 내역을 할당 ---
+      originalTime: originalTime,     // 조정 전 원래 시간
+      adjustmentReason: reason,       // 조정 사유
+      lastAdjustedTime: DateTime.now(), // 현재 시간을 마지막 조정 시각으로 기록
     );
 
     await saveData();
@@ -179,6 +177,7 @@ class AlarmProvider extends ChangeNotifier {
     debugPrint("'${alarm.name}' 알람이 TMAP 데이터 기반으로 조정되었습니다: ${newTime.toString()}");
   }
 
+  // fetchTraffic, fetchWeather, addAlarm, updateAlarm, deleteAlarm, setFrequentRoute 메서드는 변경 사항 없습니다.
   Future<void> fetchTraffic() async {
     final district = _latestWeather?['district'] ?? 'Hwaseong-si';
     _latestTraffic = await _trafficService.fetchTrafficData(district);
@@ -215,3 +214,9 @@ class AlarmProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
+
+// `navigatorKey`는 main.dart 등에 선언된 GlobalKey<NavigatorState>를 참조해야 합니다.
+// 만약 없다면, main.dart에 `final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();`를 추가하고
+// MaterialApp에 `navigatorKey: navigatorKey,`를 설정해주세요.
+// 이 파일 상단에 `import '../main.dart';` 와 같이 import 해야 할 수 있습니다.
+
