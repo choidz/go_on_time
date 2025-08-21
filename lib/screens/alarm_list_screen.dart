@@ -242,10 +242,17 @@ class _AlarmListScreenState extends State<AlarmListScreen> {
             title: Text('교통 정보', style: TextStyle(color: textColor)),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const TrafficScreen()),
-              );
+              // MaterialPageRoute 대신 이름 있는 경로를 사용하도록 수정합니다.
+              Navigator.pushNamed(context, '/traffic');
+            },
+          ),
+          // --- ▼▼▼ 이 부분이 추가되었습니다 ▼▼▼ ---
+          ListTile(
+            leading: Icon(Icons.history, color: textColor),
+            title: Text('조정 기록', style: TextStyle(color: textColor)),
+            onTap: () {
+              Navigator.pop(context); // 메뉴를 먼저 닫고
+              Navigator.pushNamed(context, '/history'); // '/history' 경로로 이동
             },
           ),
         ],
