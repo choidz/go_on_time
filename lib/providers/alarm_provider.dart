@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/alarm.dart';
+import '../models/adjustment_history.dart';
 import '../services/traffic_service.dart';
 import '../services/weather_service.dart';
 
@@ -11,10 +12,6 @@ class AlarmProvider extends ChangeNotifier {
   final TrafficService _trafficService = TrafficService();
   Map<String, dynamic>? _latestWeather;
   Map<String, dynamic>? _latestTraffic;
-
-  // --- 🗑️ 1. 임시 변수 삭제 ---
-  // 조정 내역을 Alarm 객체에 직접 저장하므로 이 변수는 더 이상 필요 없습니다.
-  // Map<String, dynamic>? lastAdjustmentDetails;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -27,11 +24,13 @@ class AlarmProvider extends ChangeNotifier {
 
   String? _frequentRouteDistrict;
 
+  final List<AdjustmentHistory> _history = [];
+  List<AdjustmentHistory> get history => _history;
+
   AlarmProvider() {
     initializeFirebase().then((_) => _loadData());
   }
 
-  // initializeFirebase, _loadData, saveData 메서드는 변경 사항 없습니다.
   Future<void> initializeFirebase() async {
     try {
       final userCredential = await _auth.signInAnonymously();
@@ -42,42 +41,56 @@ class AlarmProvider extends ChangeNotifier {
     }
   }
 
+  // --- ✨ 1. _loadData에서 히스토리 로딩 로직 호출 ---
   Future<void> _loadData() async {
+    if (_deviceUid == null) return;
+    // 여러 데이터를 동시에 불러와 앱 로딩 속도를 개선합니다.
+    await Future.wait([
+      _loadAlarms(),
+      _loadWeatherData(),
+      _loadTrafficData(),
+      _loadHistory(), // 히스토리 데이터 로딩 함수 호출
+    ]);
+    notifyListeners();
+  }
+
+  // 가독성을 위해 각 데이터 로딩 로직을 별도 함수로 분리합니다.
+  Future<void> _loadAlarms() async {
+    if (_deviceUid == null) return;
+    final snapshot = await _firestore.collection('users').doc(_deviceUid).collection('alarms').get();
+    _alarms.clear();
+    _alarms.addAll(snapshot.docs.map((doc) => Alarm.fromJson(doc.data())).toList());
+  }
+
+  Future<void> _loadWeatherData() async {
+    if (_deviceUid == null) return;
+    final weatherDoc = await _firestore.collection('users').doc(_deviceUid).collection('data').doc('weather').get();
+    if (weatherDoc.exists) _latestWeather = weatherDoc.data();
+  }
+
+  Future<void> _loadTrafficData() async {
+    if (_deviceUid == null) return;
+    final trafficDoc = await _firestore.collection('users').doc(_deviceUid).collection('data').doc('traffic').get();
+    if (trafficDoc.exists) _latestTraffic = trafficDoc.data();
+  }
+
+  // --- ✨ 2. 히스토리 데이터를 불러오는 함수 추가 ---
+  Future<void> _loadHistory() async {
     if (_deviceUid == null) return;
     final snapshot = await _firestore
         .collection('users')
         .doc(_deviceUid)
-        .collection('alarms')
+        .collection('adjustment_history')
+        .orderBy('timestamp', descending: true) // 최신순으로 정렬
         .get();
-    _alarms.clear();
-    _alarms.addAll(snapshot.docs.map((doc) => Alarm.fromJson(doc.data())).toList());
-
-    final weatherDoc = await _firestore
-        .collection('users')
-        .doc(_deviceUid)
-        .collection('data')
-        .doc('weather')
-        .get();
-    if (weatherDoc.exists) _latestWeather = weatherDoc.data();
-
-    final trafficDoc = await _firestore
-        .collection('users')
-        .doc(_deviceUid)
-        .collection('data')
-        .doc('traffic')
-        .get();
-    if (trafficDoc.exists) _latestTraffic = trafficDoc.data();
-
-    notifyListeners();
+    _history.clear();
+    _history.addAll(snapshot.docs.map((doc) => AdjustmentHistory.fromJson(doc.data())).toList());
   }
 
   Future<void> saveData() async {
     if (_deviceUid == null) return;
     final batch = _firestore.batch();
-    final alarmsRef = _firestore
-        .collection('users')
-        .doc(_deviceUid)
-        .collection('alarms');
+    final alarmsRef = _firestore.collection('users').doc(_deviceUid).collection('alarms');
 
     final snapshot = await alarmsRef.get();
     for (var doc in snapshot.docs) {
@@ -87,22 +100,8 @@ class AlarmProvider extends ChangeNotifier {
       final docRef = alarmsRef.doc(alarm.documentId);
       batch.set(docRef, alarm.toJson());
     }
-    batch.set(
-      _firestore
-          .collection('users')
-          .doc(_deviceUid)
-          .collection('data')
-          .doc('weather'),
-      _latestWeather ?? {},
-    );
-    batch.set(
-      _firestore
-          .collection('users')
-          .doc(_deviceUid)
-          .collection('data')
-          .doc('traffic'),
-      _latestTraffic ?? {},
-    );
+    batch.set(_firestore.collection('users').doc(_deviceUid).collection('data').doc('weather'), _latestWeather ?? {});
+    batch.set(_firestore.collection('users').doc(_deviceUid).collection('data').doc('traffic'), _latestTraffic ?? {});
     await batch.commit();
     debugPrint('Data saved with custom alarm document IDs.');
   }
@@ -111,7 +110,6 @@ class AlarmProvider extends ChangeNotifier {
     if (index < 0 || index >= _alarms.length) return;
 
     final alarm = _alarms[index];
-    // --- ✨ 2. 조정 전 원래 시간 저장 ---
     final originalTime = alarm.time;
 
     if (alarm.startPoint == null || alarm.endPoint == null || alarm.startPoint!.isEmpty || alarm.endPoint!.isEmpty) {
@@ -120,14 +118,12 @@ class AlarmProvider extends ChangeNotifier {
     }
 
     final travelTimeInSeconds = await _trafficService.getTravelTime(alarm.startPoint!, alarm.endPoint!);
-
     if (travelTimeInSeconds == null) {
       debugPrint("TMAP API 호출에 실패하여 알람을 조정할 수 없습니다.");
       return;
     }
 
     _latestWeather = await _weatherService.fetchWeather();
-
     int extraTimeInSeconds = 0;
     if (_latestWeather != null) {
       if ((_latestWeather!['precip'] as num? ?? 0) > 5) extraTimeInSeconds += 15 * 60;
@@ -140,7 +136,6 @@ class AlarmProvider extends ChangeNotifier {
     final newDepartureDateTime = desiredArrivalDateTime.subtract(totalTravelTime);
     final newTime = TimeOfDay.fromDateTime(newDepartureDateTime);
 
-    // 조정 사유 텍스트 생성
     String reason = "실시간 교통정보";
     List<String> reasons = [];
     if (_latestWeather != null) {
@@ -151,33 +146,45 @@ class AlarmProvider extends ChangeNotifier {
       reason += " (${reasons.join(', ')})";
     }
 
-    // --- 🗑️ 임시 변수 할당 로직 삭제 ---
-    // lastAdjustmentDetails = { ... };
-
-    // --- ✨ 3. 새로운 필드까지 포함된 Alarm 객체로 교체 ---
-    // 기존 alarm 객체의 모든 속성을 그대로 가져오면서,
-    // 변경된 time과 새로운 조정 내역 필드들을 채워줍니다.
     _alarms[index] = Alarm(
       name: alarm.name,
-      time: newTime, // 조정된 새 시간
+      time: newTime,
       days: alarm.days,
       ringtone: alarm.ringtone,
       startPoint: alarm.startPoint,
       endPoint: alarm.endPoint,
       district: alarm.district,
-      // --- 🔽 여기에 영구 저장할 조정 내역을 할당 ---
-      originalTime: originalTime,     // 조정 전 원래 시간
-      adjustmentReason: reason,       // 조정 사유
-      lastAdjustedTime: DateTime.now(), // 현재 시간을 마지막 조정 시각으로 기록
+      originalTime: originalTime,
+      adjustmentReason: reason,
+      lastAdjustedTime: DateTime.now(),
     );
 
     await saveData();
-    notifyListeners();
 
-    debugPrint("'${alarm.name}' 알람이 TMAP 데이터 기반으로 조정되었습니다: ${newTime.toString()}");
+    // --- ✨ 3. 히스토리 기록 로직 추가 ---
+    final historyEntry = AdjustmentHistory(
+      alarmName: alarm.name,
+      originalTime: originalTime,
+      adjustedTime: newTime,
+      reason: reason,
+      timestamp: Timestamp.now(), // 현재 시각을 Firestore Timestamp로 저장
+    );
+
+    // Firestore 'adjustment_history' 컬렉션에 새 문서 추가
+    await _firestore
+        .collection('users')
+        .doc(_deviceUid)
+        .collection('adjustment_history')
+        .add(historyEntry.toJson());
+
+    // 로컬 히스토리 리스트의 맨 앞에 새 기록 추가 (UI 즉시 반영용)
+    _history.insert(0, historyEntry);
+
+    notifyListeners();
+    debugPrint("'${alarm.name}' 알람 조정 완료 및 히스토리 기록됨.");
   }
 
-  // fetchTraffic, fetchWeather, addAlarm, updateAlarm, deleteAlarm, setFrequentRoute 메서드는 변경 사항 없습니다.
+  // 이하 다른 메서드들은 그대로 유지
   Future<void> fetchTraffic() async {
     final district = _latestWeather?['district'] ?? 'Hwaseong-si';
     _latestTraffic = await _trafficService.fetchTrafficData(district);
@@ -214,9 +221,3 @@ class AlarmProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
-
-// `navigatorKey`는 main.dart 등에 선언된 GlobalKey<NavigatorState>를 참조해야 합니다.
-// 만약 없다면, main.dart에 `final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();`를 추가하고
-// MaterialApp에 `navigatorKey: navigatorKey,`를 설정해주세요.
-// 이 파일 상단에 `import '../main.dart';` 와 같이 import 해야 할 수 있습니다.
-
